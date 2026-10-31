@@ -1,0 +1,120 @@
+name: Build, Test, and Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_NOLOGO: 'true'
+
+jobs:
+  build:
+    name: Windows Build and Test
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Determine package version
+        run: |
+          $project = [xml](Get-Content src/ClipBoard/ClipBoard.csproj -Raw)
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ($env:GITHUB_REF_NAME -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+              throw 'Release tags must use vMAJOR.MINOR.PATCH, for example v1.0.0.'
+            }
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          }
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Restore
+        run: dotnet restore ClipBoard.slnx
+
+      - name: Build
+        run: dotnet build ClipBoard.slnx -c Release --no-restore -p:Version=$env:PACKAGE_VERSION
+
+      - name: Test
+        run: dotnet test tests/ClipBoard.Tests/ClipBoard.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+
+      - name: Upload test results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-test-results
+          path: |
+            TestResults/**/*.trx
+            artifacts/screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish self-contained Windows app
+        run: dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:PACKAGE_VERSION -o artifacts/publish/win-x64
+
+      - name: Package app and checksum
+        run: |
+          Copy-Item README.md, LICENSE -Destination artifacts/publish/win-x64
+          New-Item -ItemType Directory -Path artifacts/packages -Force | Out-Null
+          $archive = "artifacts/packages/ClipBoard-$env:PACKAGE_VERSION-win-x64.zip"
+          Compress-Archive -Path artifacts/publish/win-x64/* -DestinationPath $archive -Force
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content "$archive.sha256" -Encoding ascii
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipBoard-win-x64
+          path: artifacts/packages/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Draft GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: ClipBoard-win-x64
+          path: release
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $assets = @(Get-ChildItem release -File | Where-Object { $_.Extension -in '.zip', '.sha256' } | ForEach-Object { $_.FullName })
+          if ($assets.Count -ne 2) { throw 'Expected the Windows ZIP and its checksum.' }
+          $existing = gh release view "$env:RELEASE_TAG" --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (-not ($existing | ConvertFrom-Json).isDraft) {
+              throw 'This release is already published. Use a new version tag instead of replacing its assets.'
+            }
+            gh release upload "$env:RELEASE_TAG" @assets --clobber
+          } else {
+            gh release create "$env:RELEASE_TAG" @assets --verify-tag --draft --generate-notes --title "ClipBoard $env:RELEASE_TAG"
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create or update the draft release.' }
