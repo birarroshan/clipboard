@@ -23,8 +23,9 @@ public partial class App : Application
             return;
         }
 
-        MainWindow = new MainWindow(startPaused: args.Args.Contains("--paused"));
-        MainWindow.Show();
+        var window = new MainWindow(startPaused: args.Args.Contains("--paused"));
+        MainWindow = window;
+        window.ShowFromTray();
     }
 
     protected override void OnExit(ExitEventArgs args)

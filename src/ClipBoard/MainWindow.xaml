@@ -175,7 +175,8 @@
                 <ListBox x:Name="HistoryList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0,2,0,0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                         SelectionChanged="History_SelectionChanged" MouseDoubleClick="History_DoubleClick" AutomationProperties.Name="Clipboard history">
+                         SelectionChanged="History_SelectionChanged" PreviewMouseLeftButtonDown="History_MouseDown"
+                         PreviewMouseLeftButtonUp="History_Click" AutomationProperties.Name="Clipboard history">
                     <ListBox.Style><Style TargetType="ListBox">
                         <Setter Property="ItemTemplate" Value="{StaticResource FullClipTemplate}"/>
                         <Style.Triggers>

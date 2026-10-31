@@ -12,8 +12,54 @@ namespace ClipBoard.Tests;
 
 public sealed class DesktopSmokeTests
 {
+    [Theory]
+    [InlineData(120, 80, 0, 0, 1920, 1040, 380, 340, 120, 80)]
+    [InlineData(1900, 1030, 0, 0, 1920, 1040, 380, 340, 1540, 700)]
+    [InlineData(-10, 900, -1920, 0, 1920, 1040, 380, 340, -380, 700)]
+    [InlineData(3195, 770, 1920, -200, 1280, 984, 380, 340, 2820, 444)]
+    [InlineData(100, 100, 0, 0, 320, 240, 380, 340, 0, 0)]
+    [InlineData(1900, 1000, 0, 0, 1920, 1040, 760, 680, 1160, 360)]
+    public void CursorPlacementStaysInMonitorWorkArea(double cursorX, double cursorY,
+        double left, double top, double width, double height, double windowWidth, double windowHeight,
+        double expectedX, double expectedY)
+    {
+        Assert.Equal(new Point(expectedX, expectedY), NativeWindowPlacement.ClampToWorkArea(
+            new Point(cursorX, cursorY), new Size(windowWidth, windowHeight), new Rect(left, top, width, height)));
+    }
+
     [Fact]
-    public async Task WindowSupportsCompactHistoryResponsivePreviewAndTrayRestore()
+    public void PasteRequiresAnEnabledEditableTextControl()
+    {
+        var edit = System.Windows.Automation.ControlType.Edit;
+        var document = System.Windows.Automation.ControlType.Document;
+        Assert.True(PasteTarget.AcceptsTextInput(edit, true, false, false));
+        Assert.True(PasteTarget.AcceptsTextInput(document, true, false, false));
+        Assert.False(PasteTarget.AcceptsTextInput(edit, true, false, true));
+        Assert.False(PasteTarget.AcceptsTextInput(document, true, false, true));
+        Assert.False(PasteTarget.AcceptsTextInput(edit, false, false, false));
+        Assert.False(PasteTarget.AcceptsTextInput(edit, true, true, false));
+        Assert.False(PasteTarget.AcceptsTextInput(edit, true, false, null));
+        Assert.False(PasteTarget.AcceptsTextInput(System.Windows.Automation.ControlType.Button, true, false, false));
+    }
+
+    [Fact]
+    public async Task WindowSupportsCompactHistoryResponsivePreviewAndTrayRestore() =>
+        await RunOnDispatcherAsync(ExerciseWindowAsync);
+
+    [InteractivePasteFact]
+    public async Task ClickPastesAtSelectionAndRejectsMissingOrReadOnlyTargets() =>
+        await RunOnDispatcherAsync(ExercisePasteAsync);
+
+    private sealed class InteractivePasteFactAttribute : FactAttribute
+    {
+        public InteractivePasteFactAttribute()
+        {
+            if (Environment.GetEnvironmentVariable("CLIPBOARD_INTERACTIVE_TESTS") != "1")
+                Skip = "Set CLIPBOARD_INTERACTIVE_TESTS=1 on an unlocked desktop to test real focus and paste.";
+        }
+    }
+
+    private static async Task RunOnDispatcherAsync(Func<Task> exercise)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -23,7 +69,7 @@ public sealed class DesktopSmokeTests
             {
                 try
                 {
-                    await ExerciseWindowAsync();
+                    await exercise();
                     completion.SetResult();
                 }
                 catch (Exception exception) { completion.SetException(exception); }
@@ -76,6 +122,8 @@ public sealed class DesktopSmokeTests
             var selected = Assert.IsType<ClipboardEntry>(list.SelectedItem);
             Assert.StartsWith(selected.Timestamp, ((TextBlock)window.FindName("SelectionMeta")).Text);
             Assert.True(copy.IsEnabled);
+            Assert.False(await window.PasteEntryAsync(selected));
+            Assert.True(window.IsVisible);
             SaveScreenshot(window, "compact.png");
             window.Width = window.MinWidth;
             window.Height = window.MinHeight;
@@ -139,7 +187,7 @@ public sealed class DesktopSmokeTests
 
             window.WindowState = WindowState.Minimized;
             Assert.False(window.IsVisible);
-            window.ShowFromTray();
+            await window.ShowFromTrayAsync();
             Assert.True(window.IsVisible);
             Assert.Equal(WindowState.Normal, window.WindowState);
 
@@ -154,6 +202,117 @@ public sealed class DesktopSmokeTests
                 Directory.Delete(directory, recursive: true);
         }
     }
+
+    private static async Task ExercisePasteAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "ClipBoard.Paste.Tests", Guid.NewGuid().ToString("N"));
+        var store = new EncryptedHistoryStore(Path.Combine(directory, "history.dat"));
+        var entry = new ClipboardEntry(Guid.NewGuid(), "pasted text", DateTimeOffset.UtcNow);
+        store.Save([entry]);
+        new ShortcutSettingsStore(Path.Combine(directory, "settings.json"))
+            .Save(new ShortcutSettings { OverrideWinV = false });
+        var editor = new TextBox { Text = "before OLD after", Margin = new Thickness(10) };
+        var button = new Button { Content = "Non-text target", Margin = new Thickness(10) };
+        var panel = new StackPanel();
+        panel.Children.Add(editor);
+        panel.Children.Add(button);
+        var target = new Window { Title = "ClipBoard paste test", Width = 320, Height = 180, Content = panel };
+        var window = new MainWindow(store, startPaused: true);
+        var originalClipboard = System.Windows.Clipboard.GetDataObject();
+        var restorePointer = GetCursorPosition(out var originalPointer);
+        try
+        {
+            target.Show();
+            ActivateTestWindow(target);
+            Assert.True(editor.Focus());
+            editor.Select(7, 3);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            await window.ShowFromTrayAsync();
+            Assert.True(window.IsActive);
+            Assert.True(window.HasPasteTarget, "The focused scratch text box was not captured before opening.");
+            var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var keys = new System.Collections.Generic.List<string>();
+            editor.PreviewKeyDown += (_, args) => keys.Add($"{args.Key}/{System.Windows.Input.Keyboard.Modifiers}");
+            editor.TextChanged += (_, _) => changed.TrySetResult();
+            window.UpdateLayout();
+            var list = (ListBox)window.FindName("HistoryList");
+            var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
+            var clickPosition = item.PointToScreen(new Point(item.ActualWidth / 2, item.ActualHeight / 2));
+            Assert.True(SetCursorPosition((int)clickPosition.X, (int)clickPosition.Y));
+            MouseEvent(0x0002, 0, 0, 0, 0);
+            MouseEvent(0x0004, 0, 0, 0, 0);
+            try { await changed.Task.WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch (TimeoutException)
+            {
+                Assert.Fail($"No text change: focused={editor.IsKeyboardFocused}; active={target.IsActive}; "
+                    + $"foreground={PasteTarget.ForegroundWindow == new WindowInteropHelper(target).Handle}; "
+                    + $"canPaste={System.Windows.Input.ApplicationCommands.Paste.CanExecute(null, editor)}; keys={string.Join(",", keys)}");
+            }
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.False(window.IsVisible);
+            Assert.Equal("before pasted text after", editor.Text);
+
+            System.Windows.Clipboard.SetText("unchanged marker");
+            ActivateTestWindow(target);
+            Assert.True(button.Focus());
+            await window.ShowFromTrayAsync();
+            Assert.False(await window.PasteEntryAsync(entry));
+            Assert.True(window.IsVisible);
+            Assert.Equal("unchanged marker", System.Windows.Clipboard.GetText());
+
+            ActivateTestWindow(target);
+            Assert.True(editor.Focus());
+            await window.ShowFromTrayAsync();
+            editor.IsReadOnly = true;
+            Assert.False(await window.PasteEntryAsync(entry));
+            Assert.True(window.IsVisible);
+            Assert.Equal("unchanged marker", System.Windows.Clipboard.GetText());
+
+            editor.IsReadOnly = false;
+            ActivateTestWindow(target);
+            Assert.True(editor.Focus());
+            await window.ShowFromTrayAsync();
+            target.Close();
+            Assert.False(await window.PasteEntryAsync(entry));
+            Assert.True(window.IsVisible);
+            Assert.Equal("unchanged marker", System.Windows.Clipboard.GetText());
+        }
+        finally
+        {
+            try
+            {
+                if (originalClipboard is null)
+                    System.Windows.Clipboard.Clear();
+                else
+                    System.Windows.Clipboard.SetDataObject(originalClipboard, true);
+            }
+            finally
+            {
+                if (restorePointer)
+                    SetCursorPosition(originalPointer.X, originalPointer.Y);
+                target.Close();
+                await window.ExitAsync();
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    private static void ActivateTestWindow(Window window)
+    {
+        KeyboardEvent(0x12, 0, 0, 0);
+        KeyboardEvent(0x12, 0, 2, 0);
+        Assert.True(window.Activate(), "The interactive test needs foreground access on an unlocked desktop.");
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "keybd_event")]
+    private static extern void KeyboardEvent(byte key, byte scan, uint flags, nuint extraInfo);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetCursorPos")]
+    private static extern bool GetCursorPosition(out System.Drawing.Point point);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetCursorPos")]
+    private static extern bool SetCursorPosition(int left, int top);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "mouse_event")]
+    private static extern void MouseEvent(uint flags, uint left, uint top, uint data, nuint extraInfo);
 
     private static async Task VerifyShortcutSettingsAsync(MainWindow window, string directory)
     {
