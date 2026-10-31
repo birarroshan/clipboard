@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ClipBoard (Windows)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/ClipBoard/bin/Debug/net10.0-windows/ClipBoard.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "console": "internalConsole"
+    }
+  ]
+}

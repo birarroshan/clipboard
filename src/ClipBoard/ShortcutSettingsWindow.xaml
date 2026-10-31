@@ -1,0 +1,28 @@
+<Window x:Class="ClipBoard.ShortcutSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Keyboard Shortcuts" Width="360" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="#F4F6F7" Foreground="#20292E" FontFamily="Segoe UI" FontSize="12">
+    <StackPanel Margin="20">
+        <CheckBox x:Name="OverrideToggle" Content="Override Win+V" Margin="0,0,0,22"/>
+        <TextBlock Text="Fallback shortcut" FontWeight="SemiBold" Margin="0,0,0,10"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+            <CheckBox x:Name="ControlToggle" Content="Ctrl" Margin="0,0,18,0"/>
+            <CheckBox x:Name="AltToggle" Content="Alt" Margin="0,0,18,0"/>
+            <CheckBox x:Name="ShiftToggle" Content="Shift"/>
+        </StackPanel>
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Label Content="Key" Target="{Binding ElementName=KeySelector}" VerticalAlignment="Center" Padding="0,0,14,0"/>
+            <ComboBox x:Name="KeySelector" Grid.Column="1" Height="30" DisplayMemberPath="Key" SelectedValuePath="Value" VerticalContentAlignment="Center" AutomationProperties.Name="Shortcut key"/>
+        </Grid>
+        <TextBlock x:Name="ErrorMessage" Foreground="#A32B28" TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed"/>
+        <Grid Margin="0,20,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Content="Reset defaults" Click="Reset_Click" HorizontalAlignment="Left" Padding="8,5"/>
+            <Button Grid.Column="1" Content="Cancel" IsCancel="True" Margin="0,0,8,0" Padding="10,5"/>
+            <Button x:Name="SaveButton" Grid.Column="2" Content="Save" IsDefault="True" Click="Save_Click" Background="#087E78" Foreground="White" Padding="12,5"/>
+        </Grid>
+    </StackPanel>
+</Window>

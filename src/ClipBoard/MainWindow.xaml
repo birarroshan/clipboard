@@ -1,0 +1,229 @@
+<Window x:Class="ClipBoard.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="ClipBoard" Width="380" Height="340" MinWidth="280" MinHeight="320"
+        WindowStyle="None" ResizeMode="CanResize"
+        WindowStartupLocation="CenterScreen" Background="#F4F6F7" Foreground="#20292E"
+        FontFamily="Segoe UI" FontSize="11" UseLayoutRounding="True"
+        PreviewKeyDown="Window_PreviewKeyDown" SizeChanged="Window_SizeChanged">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="24" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <SolidColorBrush x:Key="Accent" Color="#087E78"/>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#435158"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="5"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.72"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#087E78"/><Setter TargetName="Surface" Property="BorderThickness" Value="2"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value="0.35"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Icon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#DCE2E5"/>
+            <Setter Property="Background" Value="White"/>
+        </Style>
+        <Style x:Key="CaptionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="MinHeight" Value="22"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+        </Style>
+        <Style TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="0,5"/>
+            <Setter Property="Foreground" Value="#68777F"/>
+            <Setter Property="Margin" Value="0,0,22,0"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Tab" Padding="{TemplateBinding Padding}" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True"><Setter TargetName="Tab" Property="BorderBrush" Value="#087E78"/><Setter Property="Foreground" Value="#087E78"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Tab" Property="Background" Value="#E4F1EE"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Item" Background="{TemplateBinding Background}" BorderBrush="#E1E6E8" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Item" Property="Background" Value="#F0F7F5"/></Trigger>
+                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="Item" Property="Background" Value="#E7F3F0"/><Setter TargetName="Item" Property="BorderBrush" Value="#087E78"/></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Item" Property="BorderBrush" Value="#087E78"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsCompact, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                    <Setter Property="Height" Value="38"/>
+                    <Setter Property="Margin" Value="0,0,0,2"/>
+                    <Setter Property="Padding" Value="8,4"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PinnedIndicator" TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Foreground" Value="#087E78"/>
+            <Setter Property="Text" Value="&#xE718;"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Style.Triggers><DataTrigger Binding="{Binding IsPinned}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+        </Style>
+        <DataTemplate x:Key="CompactClipTemplate">
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="14"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock Text="{Binding Preview}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" FontSize="11"/>
+                <DockPanel Grid.Row="1">
+                    <TextBlock Text="{Binding Timestamp}" Foreground="#76858B" FontSize="9"/>
+                    <TextBlock Style="{StaticResource PinnedIndicator}" HorizontalAlignment="Right"/>
+                </DockPanel>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="FullClipTemplate">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="{Binding Kind}" FontSize="10" FontWeight="SemiBold" Foreground="#56726E"/>
+                    <TextBlock Style="{StaticResource PinnedIndicator}" HorizontalAlignment="Right"/>
+                </DockPanel>
+                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="48" FontSize="12" LineHeight="16"/>
+                <TextBlock Text="{Binding Timestamp}" Foreground="#76858B" FontSize="10" Margin="0,8,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+    <Border BorderBrush="#CDD7DA" BorderThickness="1">
+      <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="24"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="42"/>
+            <RowDefinition Height="22"/>
+        </Grid.RowDefinitions>
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Rectangle Width="22" Height="2" Fill="#B6C3C8" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,5,0">
+                <Button Style="{StaticResource CaptionButton}" Click="Minimize_Click" ToolTip="Minimize to tray" AutomationProperties.Name="Minimize">
+                    <TextBlock Text="&#xE921;" Style="{StaticResource Icon}" FontSize="10"/>
+                </Button>
+                <Button Style="{StaticResource CaptionButton}" Click="Maximize_Click" ToolTip="Maximize or restore" AutomationProperties.Name="Maximize or restore">
+                    <TextBlock Text="&#xE922;" Style="{StaticResource Icon}" FontSize="10"/>
+                </Button>
+                <Button Style="{StaticResource CaptionButton}" Click="Hide_Click" ToolTip="Hide to tray" AutomationProperties.Name="Hide to tray">
+                    <TextBlock Text="&#xE711;" Style="{StaticResource Icon}" FontSize="10"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+        <Border Grid.Row="1" Background="White" BorderBrush="#CFD9DC" BorderThickness="1" CornerRadius="5" Height="32" Margin="10,2,10,6" Padding="8,0">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="22"/><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/></Grid.ColumnDefinitions>
+                <TextBlock Text="&#xE721;" Style="{StaticResource Icon}" Foreground="#718087"/>
+                <Grid Grid.Column="1">
+                    <TextBlock x:Name="SearchPlaceholder" Text="Search history" Foreground="#87949A" IsHitTestVisible="False" VerticalAlignment="Center"/>
+                    <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0" Padding="0,5" FontSize="11"
+                             VerticalContentAlignment="Center" TextChanged="Search_Changed" AutomationProperties.Name="Search history"/>
+                </Grid>
+                <Button x:Name="ClearSearchButton" Grid.Column="2" Padding="0" Width="24" Visibility="Collapsed" Click="ClearSearch_Click" ToolTip="Clear search" AutomationProperties.Name="Clear search">
+                    <TextBlock Text="&#xE711;" Style="{StaticResource Icon}" FontSize="12"/>
+                </Button>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="2" Margin="10,0,10,0">
+            <Grid.ColumnDefinitions><ColumnDefinition x:Name="ListColumn" Width="*"/><ColumnDefinition x:Name="PreviewGap" Width="0"/><ColumnDefinition x:Name="PreviewColumn" Width="0"/></Grid.ColumnDefinitions>
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="26"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="AllFilter" Content="All clips" GroupName="Filter" IsChecked="True" Checked="Filter_Changed"/>
+                    <RadioButton x:Name="PinnedFilter" Content="Pinned" GroupName="Filter" Checked="Filter_Changed"/>
+                </StackPanel>
+                <ListBox x:Name="HistoryList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0,2,0,0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                         SelectionChanged="History_SelectionChanged" MouseDoubleClick="History_DoubleClick" AutomationProperties.Name="Clipboard history">
+                    <ListBox.Style><Style TargetType="ListBox">
+                        <Setter Property="ItemTemplate" Value="{StaticResource FullClipTemplate}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCompact, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                <Setter Property="ItemTemplate" Value="{StaticResource CompactClipTemplate}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style></ListBox.Style>
+                </ListBox>
+                <StackPanel x:Name="EmptyList" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16">
+                    <TextBlock Text="&#xE8A5;" Style="{StaticResource Icon}" FontSize="30" Foreground="#9BA9AE" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                    <TextBlock x:Name="EmptyMessage" Text="Your clipboard is empty" Foreground="#64747C" TextAlignment="Center" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Grid>
+            <Border x:Name="PreviewPane" Grid.Column="2" Visibility="Collapsed" BorderBrush="#DCE3E5" BorderThickness="1,0,0,0" Padding="16,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="26"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <DockPanel VerticalAlignment="Center">
+                        <TextBlock Text="PREVIEW" FontSize="11" FontWeight="SemiBold" Foreground="#68777F" VerticalAlignment="Center"/>
+                        <CheckBox x:Name="WrapToggle" Content="Wrap" IsChecked="True" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="Wrap_Changed" Unchecked="Wrap_Changed" ToolTip="Wrap long lines"/>
+                    </DockPanel>
+                    <TextBlock x:Name="SelectionMeta" Grid.Row="1" Text="No selection" FontSize="11" Foreground="#78878D" Margin="0,10,0,14" TextTrimming="CharacterEllipsis"/>
+                    <TextBox x:Name="DetailText" Grid.Row="2" IsReadOnly="True" BorderThickness="0" Background="Transparent" Padding="0,4,8,4"
+                             FontFamily="Cascadia Code, Consolas" FontSize="12" Foreground="#263A40" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Clip preview"/>
+                    <TextBlock x:Name="EmptyPreview" Grid.Row="2" Text="No clip selected" Foreground="#8C9AA0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                </Grid>
+            </Border>
+        </Grid>
+        <Grid Grid.Row="3" Margin="10,7">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button x:Name="CopyButton" Background="#087E78" Foreground="White" BorderThickness="0" HorizontalAlignment="Left" Click="Copy_Click" IsEnabled="False" ToolTip="Copy full text (Enter)" AutomationProperties.Name="Copy clip">
+                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8C8;" Style="{StaticResource Icon}" Margin="0,0,6,0"/><TextBlock Text="Copy"/></StackPanel>
+            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="PinButton" Style="{StaticResource IconButton}" Margin="0,0,6,0" Click="Pin_Click" ToolTip="Pin clip" IsEnabled="False" AutomationProperties.Name="Pin clip"><TextBlock x:Name="PinIcon" Text="&#xE718;" Style="{StaticResource Icon}"/></Button>
+                <Button x:Name="DeleteButton" Style="{StaticResource IconButton}" Click="Delete_Click" ToolTip="Delete clip" IsEnabled="False" AutomationProperties.Name="Delete clip"><TextBlock Text="&#xE74D;" Style="{StaticResource Icon}"/></Button>
+                <Border Width="1" Background="#DCE2E5" Margin="8,5"/>
+                <Button Click="Clear_Click" Style="{StaticResource IconButton}" ToolTip="Clear all history, including pins" AutomationProperties.Name="Clear history"><TextBlock Text="&#xE894;" Style="{StaticResource Icon}"/></Button>
+            </StackPanel>
+        </Grid>
+        <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="#DDE4E7" Background="#EDF1F3" Padding="10,0">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="CountLabel" Text="0 clips" FontSize="9" Foreground="#667780" VerticalAlignment="Center"/>
+                <TextBlock x:Name="StatusMessage" Grid.Column="1" Text="Ready" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="9" Foreground="#667780" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            </Grid>
+        </Border>
+            </Grid>
+        </Border>
+</Window>
