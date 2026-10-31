@@ -68,7 +68,7 @@ For a live integration check, launch the app, copy a disposable phrase from anot
 
 [Build, Test, and Publish](.github/workflows/build.yml) runs on pushes to `main`, pull requests targeting `main`, version tags beginning with `v`, and manual runs. It uses a Windows runner with .NET 10 to restore, build, run all tests (including the native WPF smoke test), and publish a self-contained Windows x64 app.
 
-Successful builds upload a `ClipBoard-win-x64` artifact containing a versioned ZIP and SHA-256 checksum. The ZIP includes the executable, README, and license; .NET does not need to be installed on the destination machine. Download it from the workflow run's **Artifacts** section. Build packages are retained for 30 days; test results and synthetic UI screenshots are retained for 14 days. The native tests require Windows desktop APIs; actual shortcut focus, elevated-app behavior, and cross-application clipboard use still need a manual check.
+Successful builds upload a `ClipBoard-win-x64` artifact containing a versioned standalone EXE, ZIP, and a SHA-256 checksum for each. The EXE runs directly without installing .NET; the ZIP additionally includes the README and license. Download them from the workflow run's **Artifacts** section. Build packages are retained for 30 days; test results and synthetic UI screenshots are retained for 14 days. The native tests require Windows desktop APIs; actual shortcut focus, elevated-app behavior, and cross-application clipboard use still need a manual check.
 
 ## Create A Release
 
@@ -82,12 +82,12 @@ Successful builds upload a `ClipBoard-win-x64` artifact containing a versioned Z
 	git push origin v1.0.0
 	```
 
-3. Open **Actions > Build, Test, and Publish** and wait for the tag run to succeed. It rebuilds and tests the tagged commit, uses `1.0.0` as the application/package version, and creates a **draft** release with `ClipBoard-1.0.0-win-x64.zip` and its `.sha256` file attached. The built-in `GITHUB_TOKEN` supplies release permissions; no personal access token or repository secret is needed. Organization policies must allow the release job's `contents: write` permission.
-4. Open the repository's **Releases** page, edit the draft, review the generated notes and download the Windows ZIP for a quick manual check, then click **Publish release**. Users should download the Windows ZIP, not GitHub's automatically generated source-code archives. These builds are unsigned, so Windows may display a security warning.
+3. Open **Actions > Build, Test, and Publish** and wait for the tag run to succeed. It rebuilds and tests the tagged commit, uses `1.0.0` as the application/package version, and creates a **draft** release with `ClipBoard-1.0.0-win-x64.exe`, `ClipBoard-1.0.0-win-x64.zip`, and a `.sha256` file for each. The built-in `GITHUB_TOKEN` supplies release permissions; no personal access token or repository secret is needed. Organization policies must allow the release job's `contents: write` permission.
+4. Open the repository's **Releases** page, edit the draft, review the generated notes and download the Windows EXE or ZIP for a quick manual check, then click **Publish release**. Users can run the EXE directly or extract the ZIP; GitHub's automatically generated source-code archives do not contain the built app. These builds are unsigned, so Windows may display a security warning.
 
-For the next release, use a new tag such as `v1.0.1`; do not move or reuse a published version tag. Re-running a tag workflow can update an existing draft's assets, but refuses to replace assets on an already published release. A manual workflow run builds artifacts only; pushing a version tag is what creates a release draft. Release assets remain available beyond the build-artifact retention period.
+For the next release, use a new tag such as `v1.0.1`; do not move or reuse a published version tag. Re-running a tag workflow uses the workflow from that tagged commit, so workflow changes require a new tag on a commit containing those changes. Re-runs can update an existing draft's assets, but refuse to replace assets on an already published release. A manual workflow run builds artifacts only; pushing a version tag is what creates a release draft. Release assets remain available beyond the build-artifact retention period.
 
-To verify a downloaded package, compare `Get-FileHash .\ClipBoard-1.0.0-win-x64.zip -Algorithm SHA256` with the downloaded `.sha256` file.
+To verify a downloaded asset, compare `Get-FileHash .\ClipBoard-1.0.0-win-x64.exe -Algorithm SHA256` with its downloaded `.exe.sha256` file. The same check applies to the ZIP and its `.zip.sha256` file.
 
 ## Source Layout
 
