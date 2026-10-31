@@ -22,15 +22,17 @@ dotnet run --project src/ClipBoard/ClipBoard.csproj -- --paused
 
 - Copy text in any Windows application. ClipBoard keeps a local history while it is running.
 - The window opens at 380 x 340 with small text and the top four clips, keeping pinned items first. It can resize down to 280 x 320. Drag the blank top strip to move it, or drag an edge or corner to resize. No title or pause control is shown in the window.
+- Opening places the top-left corner at the mouse pointer where possible, moving it nearby to stay inside that monitor's working area. A maximized window is restored first; a window larger than the working area is aligned to its top-left.
 - Search by any part of the text, ignoring letter case. Search always covers the entire history; compact view shows the top four matching results. Use All clips or Pinned to filter.
 - Resize to at least 760 x 460 to show the full results list and selected clip's preview. Shrinking below either threshold hides preview and restores the four-clip layout without deleting history.
-- Click Copy, double-click an item, or press Enter from search, the list, or preview to copy its complete text. Paste normally in your destination application.
+- Focus the destination text field, open ClipBoard with its shortcut, and click a clip once to paste its full text at the existing caret or selection. ClipBoard hides to the tray after sending paste. If no supported editable text control was focused, the target closed or became read-only, or focus cannot be restored, clicking does not copy or hide.
+- Click Copy or press Enter from search, the list, or preview to copy without pasting or hiding. Paste normally in your destination application. Select clips with the keyboard to inspect their preview without pasting.
 - Pin frequently used clips, delete individual clips, or clear all history with confirmation.
 - Pause capture and Resume capture are available from the tray's right-click menu. Pause stops new capture without deleting existing history. Resume captures subsequent copies, not text copied while paused. Pause is session-only; use `--paused` to start paused.
 - Closing or minimizing the window keeps the app in the system tray. Double-click the tray icon or press Win+V (the default) or Alt+B (the fallback) to reopen it. Right-click the tray icon and choose Exit to quit.
 - Ctrl+F focuses search. Down from search moves to the result list. Delete removes a focused list item. Escape clears search, then hides the window.
 
-The app does not simulate paste, launch links, or run copied commands. Starting a second instance reopens the existing one.
+Click-to-paste uses Windows UI Automation to identify the focused editable control and sends Ctrl+V only after restoring and checking its focus. Unsupported editors, elevated applications, secure desktops, or Windows input restrictions can prevent paste; use Copy and paste manually instead. Opening through the tray may leave no editable target focused. The app does not launch links or directly execute copied commands; pasted text is handled by the destination application. Starting a second instance reopens the existing one.
 
 ## Keyboard Shortcuts
 
@@ -62,11 +64,19 @@ dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-conta
 
 Tests cover search, Unicode, duplicate handling, pins, capacity, retention, encrypted persistence, corruption handling, and native window interactions, including compact defaults, four-clip limits, full-history search, and preview resize thresholds. Shortcut tests cover settings persistence, exact Win+V matching, repeat/release handling, native shortcut conflicts, failed-save rollback, hook installation/removal, and dialog validation. The WPF smoke test needs an interactive Windows desktop. It uses synthetic history with capture paused, does not replace your clipboard, and writes window and settings screenshots into `artifacts/screenshots`.
 
-For a live integration check, launch the app, copy a disposable phrase from another application, search for it, copy it back, and paste into a scratch document. Also verify the global shortcut and tray menu on your machine. The automated tests do not alter the real clipboard to exercise this cross-application flow.
+Cursor-placement tests cover monitor edges, negative coordinates, scaled dimensions, and oversized windows. Paste-policy tests reject disabled, hidden, read-only, non-text, and unknown targets.
+
+An opt-in paste test requires an unlocked desktop. It moves the pointer, activates scratch windows, temporarily writes synthetic text to the clipboard, and verifies a real clip click, selection replacement, hide-on-success, and invalid-target safeguards. It restores the prior pointer position and clipboard afterward. Keep other applications idle while running it:
+
+```powershell
+dotnet test tests/ClipBoard.Tests/ClipBoard.Tests.csproj -c Release --filter FullyQualifiedName~DesktopSmokeTests --environment CLIPBOARD_INTERACTIVE_TESTS=1
+```
+
+For a cross-application check, focus a scratch document in your usual editor, open ClipBoard with Win+V or the fallback shortcut, and click a disposable clip. Verify the insertion point, tray hiding, and placement on each monitor. Actual mixed-DPI displays, elevated applications, and editors with nonstandard accessibility support still need manual verification.
 
 ## GitHub Actions
 
-[Build, Test, and Publish](.github/workflows/build.yml) runs on pushes to `main`, pull requests targeting `main`, version tags beginning with `v`, and manual runs. It uses a Windows runner with .NET 10 to restore, build, run all tests (including the native WPF smoke test), and publish a self-contained Windows x64 app.
+[Build, Test, and Publish](.github/workflows/build.yml) runs on pushes to `main`, pull requests targeting `main`, version tags beginning with `v`, and manual runs. It uses a Windows runner with .NET 10 to restore, build, run the default tests (including the native WPF smoke test, but excluding the opt-in paste test), and publish a self-contained Windows x64 app.
 
 Successful builds upload a `ClipBoard-win-x64` artifact containing a versioned standalone EXE, ZIP, and a SHA-256 checksum for each. The EXE runs directly without installing .NET; the ZIP additionally includes the README and license. Download them from the workflow run's **Artifacts** section. Build packages are retained for 30 days; test results and synthetic UI screenshots are retained for 14 days. The native tests require Windows desktop APIs; actual shortcut focus, elevated-app behavior, and cross-application clipboard use still need a manual check.
 

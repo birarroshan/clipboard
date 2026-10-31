@@ -47,6 +47,12 @@ public partial class MainWindow : Window
     private bool exitRequested;
     private bool persistenceBlocked;
     private bool initialized;
+    private PasteTarget? pasteTarget;
+    private Guid? pressedClip;
+    private bool openingWindow;
+    private bool pasting;
+
+    internal bool HasPasteTarget => pasteTarget is not null;
 
     public MainWindow(EncryptedHistoryStore? store = null, bool startPaused = false)
     {
@@ -80,7 +86,11 @@ public partial class MainWindow : Window
             shortcutSettings = new ShortcutSettings { OverrideWinV = false };
             SetStatus("Shortcut settings could not be opened. Using Alt+B; Win+V override is off.");
         }
-        Loaded += (_, _) => SearchBox.Focus();
+        Loaded += (_, _) =>
+        {
+            NativeWindowPlacement.MoveToCursor(this);
+            SearchBox.Focus();
+        };
     }
 
     protected override void OnSourceInitialized(EventArgs args)
@@ -153,14 +163,16 @@ public partial class MainWindow : Window
             trayShortcut.Text = $"Keyboard shortcut ({shortcutSettings.Shortcut.Label})...";
     }
 
-    private void OpenShortcutSettings()
+    private async void OpenShortcutSettings()
     {
+        if (openingWindow || pasting || exitRequested)
+            return;
         if (shortcutDialog is not null)
         {
             shortcutDialog.Activate();
             return;
         }
-        ShowFromTray();
+        await ShowFromTrayAsync();
         shortcutDialog = new ShortcutSettingsWindow(shortcutSettings,
             requested => TryApplyShortcutSettings(requested, out var error) ? null : error)
             { Owner = this, Resources = Resources };
@@ -245,10 +257,45 @@ public partial class MainWindow : Window
             SetStatus(await monitor.CopyAsync(entry.Text) ? "Copied to clipboard" : "Clipboard is busy. Try copying again.");
     }
 
-    private async void History_DoubleClick(object sender, MouseButtonEventArgs args)
+    private void History_MouseDown(object sender, MouseButtonEventArgs args)
     {
-        if (ItemsControl.ContainerFromElement(HistoryList, args.OriginalSource as DependencyObject) is ListBoxItem)
-            await CopySelectionAsync();
+        pressedClip = (ItemsControl.ContainerFromElement(HistoryList, args.OriginalSource as DependencyObject)
+            as ListBoxItem)?.DataContext is ClipboardEntry entry ? entry.Id : null;
+    }
+
+    private async void History_Click(object sender, MouseButtonEventArgs args)
+    {
+        var pressed = pressedClip;
+        pressedClip = null;
+        if (ItemsControl.ContainerFromElement(HistoryList, args.OriginalSource as DependencyObject) is not ListBoxItem item
+            || item.DataContext is not ClipboardEntry entry || pressed != entry.Id)
+            return;
+        args.Handled = true;
+        await PasteEntryAsync(entry);
+    }
+
+    internal async Task<bool> PasteEntryAsync(ClipboardEntry entry)
+    {
+        var target = pasteTarget;
+        if (pasting || target is null || monitor is null || !IsVisible)
+            return false;
+        pasting = true;
+        try
+        {
+            if (!await target.RestoreFocusAsync(new WindowInteropHelper(this).Handle) || !IsVisible || exitRequested)
+                return false;
+            if (!await monitor.CopyAsync(entry.Text))
+            {
+                SetStatus("Clipboard is busy. Try pasting again.");
+                return false;
+            }
+            if (!IsVisible || exitRequested || !await target.SendPasteAsync())
+                return false;
+            pasteTarget = null;
+            Hide();
+            return true;
+        }
+        finally { pasting = false; }
     }
 
     private void Pin_Click(object sender, RoutedEventArgs args)
@@ -397,21 +444,36 @@ public partial class MainWindow : Window
         }
     }
 
-    public void ShowFromTray()
+    public async void ShowFromTray() => await ShowFromTrayAsync();
+
+    internal async Task ShowFromTrayAsync()
     {
         if (shortcutDialog is not null)
         {
             shortcutDialog.Activate();
             return;
         }
-        Show();
-        if (WindowState == WindowState.Minimized)
-            WindowState = WindowState.Normal;
-        Activate();
-        NativeClipboardMonitor.Foreground(new WindowInteropHelper(this).Handle);
-        SearchBox.Focus();
-        SearchBox.SelectAll();
-        UpdateSelection();
+        if (openingWindow || pasting || exitRequested)
+            return;
+        openingWindow = true;
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (PasteTarget.ForegroundWindow != handle)
+                pasteTarget = await PasteTarget.CaptureAsync(handle);
+            if (exitRequested)
+                return;
+            Show();
+            if (WindowState != WindowState.Normal)
+                WindowState = WindowState.Normal;
+            NativeWindowPlacement.MoveToCursor(this);
+            Activate();
+            NativeClipboardMonitor.Foreground(new WindowInteropHelper(this).Handle);
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            UpdateSelection();
+        }
+        finally { openingWindow = false; }
     }
 
     protected override void OnStateChanged(EventArgs args)
