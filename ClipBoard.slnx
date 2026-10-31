@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/ClipBoard.Core/ClipBoard.Core.csproj" />
+  <Project Path="src/ClipBoard/ClipBoard.csproj" />
+  <Project Path="tests/ClipBoard.Tests/ClipBoard.Tests.csproj" />
+</Solution>
