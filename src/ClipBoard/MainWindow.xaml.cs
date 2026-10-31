@@ -29,11 +29,17 @@ public partial class MainWindow : Window
 
     private readonly ClipboardHistory history = new();
     private readonly EncryptedHistoryStore store;
+    private readonly ShortcutSettingsStore shortcutStore;
+    private ShortcutSettings shortcutSettings = new();
+    private GlobalShortcutService? shortcuts;
+    private ShortcutSettingsWindow? shortcutDialog;
     private readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer retentionTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private NativeClipboardMonitor? monitor;
     private Forms.NotifyIcon? tray;
     private Forms.ToolStripMenuItem? trayPause;
+    private Forms.ToolStripMenuItem? trayOverride;
+    private Forms.ToolStripMenuItem? trayShortcut;
     private System.Drawing.Icon? trayIcon;
     private Task pendingSave = Task.CompletedTask;
     private bool paused;
@@ -46,6 +52,7 @@ public partial class MainWindow : Window
     {
         this.store = store ?? new EncryptedHistoryStore(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClipBoard", "history.dat"));
+        shortcutStore = new ShortcutSettingsStore(Path.Combine(Path.GetDirectoryName(this.store.FilePath)!, "settings.json"));
         paused = startPaused;
         InitializeComponent();
         initialized = true;
@@ -67,6 +74,12 @@ public partial class MainWindow : Window
         retentionTimer.Start();
         RefreshList();
         UpdatePauseState();
+        try { shortcutSettings = shortcutStore.Load(); }
+        catch (Exception exception) when (IsStorageError(exception))
+        {
+            shortcutSettings = new ShortcutSettings { OverrideWinV = false };
+            SetStatus("Shortcut settings could not be opened. Using Alt+B; Win+V override is off.");
+        }
         Loaded += (_, _) => SearchBox.Focus();
     }
 
@@ -77,8 +90,6 @@ public partial class MainWindow : Window
         try
         {
             monitor = new NativeClipboardMonitor(handle, CaptureText, ShowFromTray, SetStatus, paused);
-            if (!monitor.HotkeyRegistered)
-                SetStatus("Ctrl+Shift+V is in use. Open ClipBoard from the tray.");
         }
         catch (Win32Exception)
         {
@@ -86,6 +97,9 @@ public partial class MainWindow : Window
             UpdatePauseState();
             SetStatus("Windows could not start clipboard monitoring. Restart ClipBoard to retry.");
         }
+        shortcuts = new GlobalShortcutService(handle, ShowFromTray);
+        if (!shortcuts.TryConfigure(shortcutSettings, () => { }, out var shortcutError))
+            SetStatus(shortcutError + " Open ClipBoard from the tray.");
         InitializeTray();
         UpdateSelection();
     }
@@ -102,9 +116,56 @@ public partial class MainWindow : Window
         trayPause.Enabled = monitor is not null;
         menu.Items.Add(trayPause);
         menu.Items.Add(new Forms.ToolStripSeparator());
+        trayOverride = new Forms.ToolStripMenuItem("Override Win+V");
+        trayOverride.Click += (_, _) =>
+        {
+            if (!TryApplyShortcutSettings(shortcutSettings with { OverrideWinV = !shortcuts!.WinVEnabled }, out var error))
+                MessageBox.Show(error, "Shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
+        };
+        menu.Items.Add(trayOverride);
+        trayShortcut = new Forms.ToolStripMenuItem();
+        trayShortcut.Click += (_, _) => Dispatcher.BeginInvoke(new Action(OpenShortcutSettings));
+        menu.Items.Add(trayShortcut);
+        UpdateShortcutMenu();
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, async (_, _) => await ExitAsync());
         tray = new Forms.NotifyIcon { Icon = trayIcon, Text = paused ? "ClipBoard - capture paused" : "ClipBoard", Visible = true, ContextMenuStrip = menu };
         tray.DoubleClick += (_, _) => ShowFromTray();
+    }
+
+    internal bool TryApplyShortcutSettings(ShortcutSettings requested, out string error)
+    {
+        error = "Shortcut service is not ready.";
+        if (shortcuts is null || !shortcuts.TryConfigure(requested, () => shortcutStore.Save(requested), out error))
+            return false;
+        shortcutSettings = requested;
+        UpdateShortcutMenu();
+        SetStatus(requested.OverrideWinV ? $"Win+V override on; {requested.Shortcut.Label} available"
+            : $"Shortcut: {requested.Shortcut.Label}");
+        return true;
+    }
+
+    private void UpdateShortcutMenu()
+    {
+        if (trayOverride is not null)
+            trayOverride.Checked = shortcuts?.WinVEnabled == true;
+        if (trayShortcut is not null)
+            trayShortcut.Text = $"Keyboard shortcut ({shortcutSettings.Shortcut.Label})...";
+    }
+
+    private void OpenShortcutSettings()
+    {
+        if (shortcutDialog is not null)
+        {
+            shortcutDialog.Activate();
+            return;
+        }
+        ShowFromTray();
+        shortcutDialog = new ShortcutSettingsWindow(shortcutSettings,
+            requested => TryApplyShortcutSettings(requested, out var error) ? null : error)
+            { Owner = this, Resources = Resources };
+        try { shortcutDialog.ShowDialog(); }
+        finally { shortcutDialog = null; }
     }
 
     private static System.Drawing.Icon CreateTrayIcon()
@@ -338,6 +399,11 @@ public partial class MainWindow : Window
 
     public void ShowFromTray()
     {
+        if (shortcutDialog is not null)
+        {
+            shortcutDialog.Activate();
+            return;
+        }
         Show();
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
@@ -364,7 +430,7 @@ public partial class MainWindow : Window
             if (tray is not null)
             {
                 tray.BalloonTipTitle = "ClipBoard is still running";
-                tray.BalloonTipText = "Open it from the tray or press Ctrl+Shift+V. Choose Exit in the tray menu to quit.";
+                tray.BalloonTipText = $"Open it from the tray or press {shortcutSettings.Shortcut.Label}. Choose Exit in the tray menu to quit.";
                 tray.ShowBalloonTip(3000);
             }
         }
@@ -391,6 +457,7 @@ public partial class MainWindow : Window
         }
         exiting = true;
         retentionTimer.Stop();
+        shortcuts?.Dispose();
         monitor?.Dispose();
         tray?.ContextMenuStrip?.Dispose();
         tray?.Dispose();

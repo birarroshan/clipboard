@@ -27,10 +27,19 @@ dotnet run --project src/ClipBoard/ClipBoard.csproj -- --paused
 - Click Copy, double-click an item, or press Enter from search, the list, or preview to copy its complete text. Paste normally in your destination application.
 - Pin frequently used clips, delete individual clips, or clear all history with confirmation.
 - Pause capture and Resume capture are available from the tray's right-click menu. Pause stops new capture without deleting existing history. Resume captures subsequent copies, not text copied while paused. Pause is session-only; use `--paused` to start paused.
-- Closing or minimizing the window keeps the app in the system tray. Double-click the tray icon or press Ctrl+Shift+V to reopen it. Right-click the tray icon and choose Exit to quit.
+- Closing or minimizing the window keeps the app in the system tray. Double-click the tray icon or press Win+V (the default) or Alt+B (the fallback) to reopen it. Right-click the tray icon and choose Exit to quit.
 - Ctrl+F focuses search. Down from search moves to the result list. Delete removes a focused list item. Escape clears search, then hides the window.
 
-The global shortcut is optional: if another application has reserved Ctrl+Shift+V, use the tray icon. The app does not simulate paste, launch links, or run copied commands. Starting a second instance reopens the existing one.
+The app does not simulate paste, launch links, or run copied commands. Starting a second instance reopens the existing one.
+
+## Keyboard Shortcuts
+
+- Win+V is enabled by default to open ClipBoard instead of Windows clipboard history. Turn off **Override Win+V** in the tray menu or shortcut dialog to restore Windows' built-in behavior. An explicitly saved opt-out is preserved across updates.
+- Alt+B is the default fallback shortcut and remains available alongside Win+V. Right-click the tray icon and select **Keyboard shortcut (Alt+B)...** to change the fallback. Choose one or more of Ctrl, Alt, and Shift plus a letter, digit, or F1-F11. Reset defaults enables Win+V and restores Alt+B when you save.
+- This override uses a low-level keyboard hook while ClipBoard is running, not a supported replacement for the Windows clipboard UI. Disabling it or exiting removes the hook and restores normal Win+V behavior. No Windows settings, registry policies, or startup entries are changed.
+- Only unmodified Win+V is intercepted. Ctrl/Alt/Shift+Win+V, other Windows shortcuts, and ordinary typing pass through. Key repeat opens the window once; key presses are not recorded or logged. A nonprinting key event prevents the Start menu from opening when the Windows key is released.
+- The override is best-effort: elevated applications, secure desktops, Remote Desktop, other remappers, or Windows removing a stalled hook can prevent it from working. Use the configured fallback or tray icon in those cases.
+- Settings persist in `%LOCALAPPDATA%\ClipBoard\settings.json`, separately from encrypted clipboard history. Shortcut conflicts or failed saves leave the previous working configuration unchanged. If a saved shortcut is unavailable on startup, open the tray menu to choose another.
 
 ## Privacy And Limits
 
@@ -51,7 +60,7 @@ dotnet test ClipBoard.slnx
 dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/ClipBoard
 ```
 
-Tests cover search, Unicode, duplicate handling, pins, capacity, retention, encrypted persistence, corruption handling, and native window interactions, including compact defaults, four-clip limits, full-history search, and preview resize thresholds. The WPF smoke test needs an interactive Windows desktop. It uses synthetic history with capture paused, does not replace your clipboard, and writes default, minimum-size, and expanded screenshots into `artifacts/screenshots`.
+Tests cover search, Unicode, duplicate handling, pins, capacity, retention, encrypted persistence, corruption handling, and native window interactions, including compact defaults, four-clip limits, full-history search, and preview resize thresholds. Shortcut tests cover settings persistence, exact Win+V matching, repeat/release handling, native shortcut conflicts, failed-save rollback, hook installation/removal, and dialog validation. The WPF smoke test needs an interactive Windows desktop. It uses synthetic history with capture paused, does not replace your clipboard, and writes window and settings screenshots into `artifacts/screenshots`.
 
 For a live integration check, launch the app, copy a disposable phrase from another application, search for it, copy it back, and paste into a scratch document. Also verify the global shortcut and tray menu on your machine. The automated tests do not alter the real clipboard to exercise this cross-application flow.
 

@@ -12,8 +12,6 @@ namespace ClipBoard;
 internal sealed class NativeClipboardMonitor : IDisposable
 {
     private const int ClipboardUpdate = 0x031D;
-    private const int HotkeyMessage = 0x0312;
-    private const int HotkeyId = 0x4342;
     private const uint UnicodeText = 13;
     private static readonly uint ShowMessage = RegisterWindowMessage("ClipBoard.Show.1");
     private static readonly uint ExcludeFormat = RegisterClipboardFormat("ExcludeClipboardContentFromMonitorProcessing");
@@ -29,7 +27,6 @@ internal sealed class NativeClipboardMonitor : IDisposable
     private bool disposed;
 
     public bool IsPaused { get; set; }
-    public bool HotkeyRegistered { get; }
 
     public NativeClipboardMonitor(nint handle, Action<string> captured, Action showWindow,
         Action<string> status, bool startPaused)
@@ -44,7 +41,6 @@ internal sealed class NativeClipboardMonitor : IDisposable
         if (!AddClipboardFormatListener(handle))
             throw new Win32Exception(Marshal.GetLastWin32Error());
         source.AddHook(WindowMessage);
-        HotkeyRegistered = RegisterHotKey(handle, HotkeyId, 0x0002 | 0x0004 | 0x4000, 0x56);
         if (!startPaused)
             retryTimer.Start();
     }
@@ -56,7 +52,7 @@ internal sealed class NativeClipboardMonitor : IDisposable
             attempts = 0;
             retryTimer.Start();
         }
-        else if ((message == HotkeyMessage && wParam == HotkeyId) || message == ShowMessage)
+        else if (message == ShowMessage)
         {
             showWindow();
             handled = true;
@@ -154,8 +150,6 @@ internal sealed class NativeClipboardMonitor : IDisposable
         disposed = true;
         retryTimer.Stop();
         RemoveClipboardFormatListener(source.Handle);
-        if (HotkeyRegistered)
-            UnregisterHotKey(source.Handle, HotkeyId);
         source.RemoveHook(WindowMessage);
     }
 
@@ -166,10 +160,6 @@ internal sealed class NativeClipboardMonitor : IDisposable
     private static extern bool AddClipboardFormatListener(nint handle);
     [DllImport("user32.dll")]
     private static extern bool RemoveClipboardFormatListener(nint handle);
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(nint handle, int id, uint modifiers, uint key);
-    [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(nint handle, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessage(string message);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

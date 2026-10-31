@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -142,6 +143,7 @@ public sealed class DesktopSmokeTests
             Assert.True(window.IsVisible);
             Assert.Equal(WindowState.Normal, window.WindowState);
 
+            await VerifyShortcutSettingsAsync(window, directory);
             await window.ExitAsync();
             Assert.Equal(4, store.Load().Count);
         }
@@ -153,22 +155,109 @@ public sealed class DesktopSmokeTests
         }
     }
 
-    private static void SaveScreenshot(Window window, string name)
+    private static async Task VerifyShortcutSettingsAsync(MainWindow window, string directory)
+    {
+        var settingsStore = new ShortcutSettingsStore(Path.Combine(directory, "settings.json"));
+        Assert.Equal("Alt+B", settingsStore.Load().Shortcut.Label);
+        Assert.True(settingsStore.Load().OverrideWinV);
+        using var competingWindow = new HwndSource(new HwndSourceParameters("ClipBoard shortcut test") { Width = 1, Height = 1 });
+        using var competingShortcut = new GlobalShortcutService(competingWindow.Handle, () => { });
+        ShortcutSettings? occupied = null;
+        ShortcutSettings? working = null;
+        foreach (var key in Enumerable.Range(0x70, 11).Reverse())
+        {
+            var candidate = new ShortcutSettings { Shortcut = new ShortcutGesture(7, (uint)key), OverrideWinV = false };
+            if (occupied is null && competingShortcut.TryConfigure(candidate, () => { }, out _))
+                occupied = candidate;
+            else if (occupied is not null && window.TryApplyShortcutSettings(candidate, out _))
+            {
+                working = candidate;
+                break;
+            }
+        }
+        Assert.NotNull(occupied);
+        Assert.NotNull(working);
+        Assert.Equal(working, settingsStore.Load());
+        Assert.False(window.TryApplyShortcutSettings(occupied, out var error));
+        Assert.Contains("unavailable", error);
+        Assert.Equal(working, settingsStore.Load());
+        competingShortcut.Dispose();
+
+        using (var lockedFile = new FileStream(settingsStore.FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.False(window.TryApplyShortcutSettings(occupied with { OverrideWinV = true }, out error));
+            Assert.Contains("Could not save", error);
+        }
+        Assert.Equal(working, settingsStore.Load());
+        using (var probe = new GlobalShortcutService(competingWindow.Handle, () => { }))
+        {
+            Assert.True(probe.TryConfigure(occupied with { OverrideWinV = true }, () => { }, out error), error);
+            Assert.True(probe.WinVEnabled);
+            Assert.False(probe.TryConfigure(working, () => { }, out error));
+            Assert.True(probe.WinVEnabled);
+            probe.Dispose();
+            Assert.False(probe.WinVEnabled);
+            Assert.False(probe.HotkeyRegistered);
+        }
+
+        Assert.True(window.TryApplyShortcutSettings(working with { OverrideWinV = true }, out error), error);
+        Assert.True(settingsStore.Load().OverrideWinV);
+        Assert.True(window.TryApplyShortcutSettings(working, out error), error);
+        Assert.False(settingsStore.Load().OverrideWinV);
+
+        ShortcutSettings? attempted = null;
+        var dialog = new ShortcutSettingsWindow(new ShortcutSettings(), requested =>
+        {
+            attempted = requested;
+            return "Shortcut unavailable.";
+        }) { Owner = window, Resources = window.Resources };
+        try
+        {
+            dialog.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var alt = (CheckBox)dialog.FindName("AltToggle");
+            var control = (CheckBox)dialog.FindName("ControlToggle");
+            var key = (ComboBox)dialog.FindName("KeySelector");
+            var save = (Button)dialog.FindName("SaveButton");
+            var message = (TextBlock)dialog.FindName("ErrorMessage");
+            Assert.True(alt.IsChecked);
+            Assert.True(((CheckBox)dialog.FindName("OverrideToggle")).IsChecked);
+            Assert.Equal(0x42u, key.SelectedValue);
+            alt.IsChecked = false;
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Null(attempted);
+            Assert.Equal(Visibility.Visible, message.Visibility);
+            control.IsChecked = true;
+            key.SelectedValue = 0x56u;
+            ((CheckBox)dialog.FindName("OverrideToggle")).IsChecked = true;
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.NotNull(attempted);
+            Assert.Equal("Ctrl+V", attempted.Shortcut.Label);
+            Assert.True(attempted.OverrideWinV);
+            Assert.Equal("Shortcut unavailable.", message.Text);
+            SaveScreenshot(dialog, "shortcuts.png", 1_000);
+        }
+        finally { dialog.Close(); }
+    }
+
+    private static void SaveScreenshot(Window window, string name, int minimumBytes = 10_000)
     {
         window.UpdateLayout();
         var content = (FrameworkElement)window.Content;
         var bitmap = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         var background = new DrawingVisual();
         using (var drawing = background.RenderOpen())
+        {
             drawing.DrawRectangle(window.Background, null, new Rect(0, 0, content.ActualWidth, content.ActualHeight));
+            drawing.DrawRectangle(new VisualBrush(content), null, new Rect(0, 0, content.ActualWidth, content.ActualHeight));
+        }
         bitmap.Render(background);
-        bitmap.Render(content);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         var directory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../artifacts/screenshots"));
         Directory.CreateDirectory(directory);
         using var output = File.Create(Path.Combine(directory, name));
         encoder.Save(output);
-        Assert.True(output.Length > 10_000);
+        Assert.True(output.Length > minimumBytes);
     }
 }

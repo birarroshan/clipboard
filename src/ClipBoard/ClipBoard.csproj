@@ -12,5 +12,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../ClipBoard.Core/ClipBoard.Core.csproj" />
+    <InternalsVisibleTo Include="ClipBoard.Tests" />
   </ItemGroup>
 </Project>
