@@ -108,6 +108,9 @@ public sealed class DesktopSmokeTests
             var pinned = (RadioButton)window.FindName("PinnedFilter");
             var all = (RadioButton)window.FindName("AllFilter");
             var preview = (Border)window.FindName("PreviewPane");
+            Assert.Equal("ClipStack", window.Title);
+            Assert.Equal("ClipStack", typeof(MainWindow).Assembly.GetName().Name);
+            Assert.Equal(256, Assert.IsAssignableFrom<BitmapSource>(window.Icon).PixelWidth);
             Assert.Equal(380, window.Width);
             Assert.Equal(340, window.Height);
             Assert.Equal(WindowStyle.None, window.WindowStyle);

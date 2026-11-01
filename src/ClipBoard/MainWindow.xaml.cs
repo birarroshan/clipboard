@@ -1,15 +1,14 @@
 using System;
 using System.ComponentModel;
-using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ClipBoard.Core;
 using Forms = System.Windows.Forms;
@@ -105,22 +104,27 @@ public partial class MainWindow : Window
         {
             paused = true;
             UpdatePauseState();
-            SetStatus("Windows could not start clipboard monitoring. Restart ClipBoard to retry.");
+            SetStatus("Windows could not start clipboard monitoring. Restart ClipStack to retry.");
         }
         shortcuts = new GlobalShortcutService(handle, ShowFromTray);
         if (!shortcuts.TryConfigure(shortcutSettings, () => { }, out var shortcutError))
-            SetStatus(shortcutError + " Open ClipBoard from the tray.");
+            SetStatus(shortcutError + " Open ClipStack from the tray.");
         InitializeTray();
         UpdateSelection();
     }
 
     private void InitializeTray()
     {
-        trayIcon = CreateTrayIcon();
-        Icon = Imaging.CreateBitmapSourceFromHIcon(trayIcon.Handle, Int32Rect.Empty,
-            System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+        using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("ClipStack.ico")
+            ?? throw new InvalidOperationException("The ClipStack icon resource is missing.");
+        var decoder = new IconBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        Icon = decoder.Frames.OrderByDescending(frame => frame.PixelWidth).First();
+        Icon.Freeze();
+        stream.Position = 0;
+        using var resourceIcon = new System.Drawing.Icon(stream, Forms.SystemInformation.SmallIconSize);
+        trayIcon = (System.Drawing.Icon)resourceIcon.Clone();
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("Open ClipBoard", null, (_, _) => ShowFromTray());
+        menu.Items.Add("Open ClipStack", null, (_, _) => ShowFromTray());
         trayPause = new Forms.ToolStripMenuItem(paused ? "Resume capture" : "Pause capture");
         trayPause.Click += (_, _) => TogglePause();
         trayPause.Enabled = monitor is not null;
@@ -139,7 +143,7 @@ public partial class MainWindow : Window
         UpdateShortcutMenu();
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, async (_, _) => await ExitAsync());
-        tray = new Forms.NotifyIcon { Icon = trayIcon, Text = paused ? "ClipBoard - capture paused" : "ClipBoard", Visible = true, ContextMenuStrip = menu };
+        tray = new Forms.NotifyIcon { Icon = trayIcon, Text = paused ? "ClipStack - capture paused" : "ClipStack", Visible = true, ContextMenuStrip = menu };
         tray.DoubleClick += (_, _) => ShowFromTray();
     }
 
@@ -175,26 +179,9 @@ public partial class MainWindow : Window
         await ShowFromTrayAsync();
         shortcutDialog = new ShortcutSettingsWindow(shortcutSettings,
             requested => TryApplyShortcutSettings(requested, out var error) ? null : error)
-            { Owner = this, Resources = Resources };
+            { Owner = this, Resources = Resources, Icon = Icon };
         try { shortcutDialog.ShowDialog(); }
         finally { shortcutDialog = null; }
-    }
-
-    private static System.Drawing.Icon CreateTrayIcon()
-    {
-        using var bitmap = new Bitmap(32, 32);
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.Clear(System.Drawing.Color.Transparent);
-        using var background = new SolidBrush(System.Drawing.Color.FromArgb(8, 126, 120));
-        using var foreground = new System.Drawing.Pen(System.Drawing.Color.White, 2);
-        graphics.FillRectangle(background, 2, 2, 28, 28);
-        graphics.DrawRectangle(foreground, 9, 8, 14, 18);
-        graphics.FillRectangle(System.Drawing.Brushes.White, 12, 5, 8, 5);
-        graphics.DrawLine(foreground, 12, 15, 20, 15);
-        graphics.DrawLine(foreground, 12, 20, 18, 20);
-        var handle = bitmap.GetHicon();
-        try { return (System.Drawing.Icon)System.Drawing.Icon.FromHandle(handle).Clone(); }
-        finally { DestroyIcon(handle); }
     }
 
     private void CaptureText(string text)
@@ -381,7 +368,7 @@ public partial class MainWindow : Window
     {
         SetStatus(paused ? "Capture paused" : "Listening");
         if (tray is not null)
-            tray.Text = paused ? "ClipBoard - capture paused" : "ClipBoard";
+            tray.Text = paused ? "ClipStack - capture paused" : "ClipStack";
         if (trayPause is not null)
             trayPause.Text = paused ? "Resume capture" : "Pause capture";
     }
@@ -491,7 +478,7 @@ public partial class MainWindow : Window
             Hide();
             if (tray is not null)
             {
-                tray.BalloonTipTitle = "ClipBoard is still running";
+                tray.BalloonTipTitle = "ClipStack is still running";
                 tray.BalloonTipText = $"Open it from the tray or press {shortcutSettings.Shortcut.Label}. Choose Exit in the tray menu to quit.";
                 tray.ShowBalloonTip(3000);
             }
@@ -532,7 +519,4 @@ public partial class MainWindow : Window
 
     private static bool IsStorageError(Exception exception) => exception is IOException or UnauthorizedAccessException
         or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException;
-
-    [DllImport("user32.dll")]
-    private static extern bool DestroyIcon(nint handle);
 }
