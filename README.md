@@ -55,6 +55,17 @@ Click-to-paste uses Windows UI Automation to identify the focused editable contr
 - Encryption does not protect against another process running as your Windows user. Clearing history does not clear the current Windows clipboard or guarantee forensic erasure.
 - If a history file cannot be read, it is preserved and new captures remain in memory. Clear history explicitly to discard that file and re-enable saving. Save failures are shown in the status bar.
 
+## Installer
+
+The project includes a basic Windows installer script at `installer/ClipBoardInstaller.iss`. It builds a simple EXE installer with the app name, publisher details, an install wizard, and the MIT license shown during setup. The installer installs the published app into `Program Files` and adds Start Menu and optional desktop shortcuts.
+
+To build the installer on Windows:
+
+```powershell
+dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o artifacts/publish/win-x64/standalone
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppSourceDir=$PWD\artifacts\publish\win-x64\standalone" "/DOutputDir=$PWD\artifacts\packages" "/DAppVersion=1.0.0" installer\ClipBoardInstaller.iss
+```
+
 ## Build And Test
 
 ```powershell

@@ -71,6 +71,21 @@ jobs:
       - name: Publish framework-dependent Windows app
         run: dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:PACKAGE_VERSION -o artifacts/publish/win-x64/framework-dependent
 
+      - name: Build Windows installer
+        run: |
+          $installerSource = "installer/ClipBoardInstaller.iss"
+          $installerOutput = "artifacts/packages"
+          if (-not (Test-Path $installerSource -PathType Leaf)) {
+            throw "Missing installer script: $installerSource"
+          }
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -PathType Leaf)) {
+            choco install innosetup -y --no-progress
+          }
+          $innoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $publishPath = "artifacts/publish/win-x64/standalone"
+          & $innoCompiler "/DAppSourceDir=$PWD\$publishPath" "/DOutputDir=$PWD\$installerOutput" "/DAppVersion=$env:PACKAGE_VERSION" $installerSource
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+
       - name: Package app and checksums
         run: |
           New-Item -ItemType Directory -Path artifacts/packages -Force | Out-Null
@@ -86,6 +101,10 @@ jobs:
               "$hash  $(Split-Path $asset -Leaf)" | Set-Content "$asset.sha256" -Encoding ascii
             }
           }
+          $installer = "artifacts/packages/ClipBoard-$env:PACKAGE_VERSION-win-x64-setup.exe"
+          if (-not (Test-Path $installer -PathType Leaf)) { throw "Missing installer asset: $installer" }
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $installer -Leaf)" | Set-Content "$installer.sha256" -Encoding ascii
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
@@ -124,6 +143,11 @@ jobs:
               (Get-Item $asset).FullName
             }
           })
+          $installer = "release/ClipBoard-$version-win-x64-setup.exe"
+          if (-not (Test-Path $installer -PathType Leaf)) { throw "Missing installer asset: $installer" }
+          $installerHash = "release/ClipBoard-$version-win-x64-setup.exe.sha256"
+          if (-not (Test-Path $installerHash -PathType Leaf)) { throw "Missing installer hash: $installerHash" }
+          $assets += @((Get-Item $installer).FullName, (Get-Item $installerHash).FullName)
           $existing = gh release view "$env:RELEASE_TAG" --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if (-not ($existing | ConvertFrom-Json).isDraft) {
