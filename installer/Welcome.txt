@@ -1,4 +1,4 @@
-ClipBoard
+ClipStack
 
 A native Windows clipboard manager with searchable history and pinned clips.
 

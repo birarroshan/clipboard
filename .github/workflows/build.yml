@@ -65,52 +65,65 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Publish compressed standalone Windows app
-        run: dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:PACKAGE_VERSION -o artifacts/publish/win-x64/standalone
+      - name: Publish compressed standalone Windows apps
+        run: |
+          foreach ($architecture in @('x64', 'x86')) {
+            dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r "win-$architecture" --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:PACKAGE_VERSION -o "artifacts/publish/win-$architecture/standalone"
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $architecture." }
+          }
 
-      - name: Publish framework-dependent Windows app
-        run: dotnet publish src/ClipBoard/ClipBoard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:PACKAGE_VERSION -o artifacts/publish/win-x64/framework-dependent
-
-      - name: Build Windows installer
+      - name: Build Windows installers
         run: |
           $installerSource = "installer/ClipBoardInstaller.iss"
           $installerOutput = "artifacts/packages"
           if (-not (Test-Path $installerSource -PathType Leaf)) {
             throw "Missing installer script: $installerSource"
           }
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -PathType Leaf)) {
+          $compilerPaths = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
+          $innoCompiler = $compilerPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $innoCompiler) {
             choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+            $innoCompiler = $compilerPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
           }
-          $innoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          $publishPath = "artifacts/publish/win-x64/standalone"
-          & $innoCompiler "/DAppSourceDir=$PWD\$publishPath" "/DOutputDir=$PWD\$installerOutput" "/DAppVersion=$env:PACKAGE_VERSION" $installerSource
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+          if (-not $innoCompiler) { throw 'Inno Setup 6 compiler not found.' }
+          foreach ($architecture in @('x64', 'x86')) {
+            $publishPath = "artifacts/publish/win-$architecture/standalone"
+            & $innoCompiler "/DAppSourceDir=$PWD\$publishPath" "/DOutputDir=$PWD\$installerOutput" "/DAppVersion=$env:PACKAGE_VERSION" "/DAppArchitecture=$architecture" $installerSource
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed for $architecture." }
+          }
 
       - name: Package app and checksums
         run: |
           New-Item -ItemType Directory -Path artifacts/packages -Force | Out-Null
-          foreach ($variant in @('standalone', 'framework-dependent')) {
-            $publishPath = "artifacts/publish/win-x64/$variant"
+          foreach ($architecture in @('x64', 'x86')) {
+            $publishPath = "artifacts/publish/win-$architecture/standalone"
             Copy-Item README.md, LICENSE -Destination $publishPath
-            $archive = "artifacts/packages/ClipBoard-$env:PACKAGE_VERSION-win-x64-$variant.zip"
-            $executable = "artifacts/packages/ClipBoard-$env:PACKAGE_VERSION-win-x64-$variant.exe"
-            Copy-Item "$publishPath/ClipBoard.exe" -Destination $executable
-            Compress-Archive -Path "$publishPath/*" -DestinationPath $archive -Force
-            foreach ($asset in @($archive, $executable)) {
+            New-Item -ItemType Directory -Path "$publishPath/assets/branding" -Force | Out-Null
+            Copy-Item assets/branding/ClipStack-wordmark.png -Destination "$publishPath/assets/branding"
+            $archive = "artifacts/packages/ClipStack-$env:PACKAGE_VERSION-win-$architecture-standalone.zip"
+            $installer = "artifacts/packages/ClipStack-$env:PACKAGE_VERSION-win-$architecture-setup.exe"
+            if (-not (Test-Path $installer -PathType Leaf)) { throw "Missing installer asset: $installer" }
+            Compress-Archive -Path "$publishPath/ClipStack.exe", "$publishPath/README.md", "$publishPath/LICENSE", "$publishPath/assets" -DestinationPath $archive -Force
+            foreach ($asset in @($archive, $installer)) {
               $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
               "$hash  $(Split-Path $asset -Leaf)" | Set-Content "$asset.sha256" -Encoding ascii
             }
           }
-          $installer = "artifacts/packages/ClipBoard-$env:PACKAGE_VERSION-win-x64-setup.exe"
-          if (-not (Test-Path $installer -PathType Leaf)) { throw "Missing installer asset: $installer" }
-          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $(Split-Path $installer -Leaf)" | Set-Content "$installer.sha256" -Encoding ascii
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: ClipBoard-win-x64
-          path: artifacts/packages/*
+          name: ClipStack-Windows
+          path: |
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x64-setup.exe
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x64-setup.exe.sha256
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x64-standalone.zip
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x64-standalone.zip.sha256
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x86-setup.exe
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x86-setup.exe.sha256
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x86-standalone.zip
+            artifacts/packages/ClipStack-${{ env.PACKAGE_VERSION }}-win-x86-standalone.zip.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -126,7 +139,7 @@ jobs:
       - name: Download Windows package
         uses: actions/download-artifact@v4
         with:
-          name: ClipBoard-win-x64
+          name: ClipStack-Windows
           path: release
 
       - name: Create or update draft release
@@ -136,18 +149,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $version = $env:RELEASE_TAG.Substring(1)
-          $assets = @(foreach ($variant in @('standalone', 'framework-dependent')) {
-            foreach ($extension in @('exe', 'zip', 'exe.sha256', 'zip.sha256')) {
-              $asset = "release/ClipBoard-$version-win-x64-$variant.$extension"
+          $assets = @(foreach ($architecture in @('x64', 'x86')) {
+            foreach ($suffix in @('setup.exe', 'setup.exe.sha256', 'standalone.zip', 'standalone.zip.sha256')) {
+              $asset = "release/ClipStack-$version-win-$architecture-$suffix"
               if (-not (Test-Path $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
               (Get-Item $asset).FullName
             }
           })
-          $installer = "release/ClipBoard-$version-win-x64-setup.exe"
-          if (-not (Test-Path $installer -PathType Leaf)) { throw "Missing installer asset: $installer" }
-          $installerHash = "release/ClipBoard-$version-win-x64-setup.exe.sha256"
-          if (-not (Test-Path $installerHash -PathType Leaf)) { throw "Missing installer hash: $installerHash" }
-          $assets += @((Get-Item $installer).FullName, (Get-Item $installerHash).FullName)
           $existing = gh release view "$env:RELEASE_TAG" --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if (-not ($existing | ConvertFrom-Json).isDraft) {
@@ -155,6 +163,6 @@ jobs:
             }
             gh release upload "$env:RELEASE_TAG" @assets --clobber
           } else {
-            gh release create "$env:RELEASE_TAG" @assets --verify-tag --draft --generate-notes --title "ClipBoard $env:RELEASE_TAG"
+            gh release create "$env:RELEASE_TAG" @assets --verify-tag --draft --generate-notes --title "ClipStack $env:RELEASE_TAG"
           }
           if ($LASTEXITCODE -ne 0) { throw 'Could not create or update the draft release.' }
