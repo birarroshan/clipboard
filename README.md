@@ -1,3 +1,4 @@
+[![Build, Test, and Publish](https://github.com/birarroshan/clipboard/actions/workflows/build.yml/badge.svg)](https://github.com/birarroshan/clipboard/actions/workflows/build.yml)
 # ClipBoard
 
 A native Windows text clipboard manager with searchable history and pinned clips. Built with C# and WPF. No account, server, or cloud sync.
